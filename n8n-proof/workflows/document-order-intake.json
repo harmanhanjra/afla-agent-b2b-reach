@@ -1,0 +1,145 @@
+{
+  "name": "Document Order Intake - Proof of Work",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "document-order-intake",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "1",
+      "name": "Order Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const x=$json.body ?? $json; const orderId=String(x.orderId||x.order_id||'').trim(); const customer=String(x.customer||x.customerName||'').trim(); const items=Array.isArray(x.items)?x.items:[]; const confidence=Number(x.confidence ?? 1); const errors=[]; if(!orderId) errors.push('orderId missing'); if(!customer) errors.push('customer missing'); if(!items.length) errors.push('items missing'); for(const [idx,it] of items.entries()){if(!it.sku) errors.push(`items[${idx}].sku missing`); if(Number(it.qty||0)<=0) errors.push(`items[${idx}].qty invalid`);} const valid=errors.length===0; const requiresHuman=!valid || confidence<0.85; return [{json:{order:{orderId,customer,items},confidence,valid,errors,requiresHuman,processedAt:new Date().toISOString()}}];"
+      },
+      "id": "2",
+      "name": "Normalize + Validate",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        260,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $json.requiresHuman }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "3",
+      "name": "Human Review?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        520,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "return items.map(i=>({json:{...i.json,reviewQueue:{status:'pending-human-review',reason:i.json.errors.length?i.json.errors:['low extraction confidence']}}}));"
+      },
+      "id": "4",
+      "name": "Review Queue",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        780,
+        -100
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "return items.map(i=>({json:{...i.json,erpPayload:{externalOrderId:i.json.order.orderId,customer:i.json.order.customer,lines:i.json.order.items,status:'approved-for-erp'}}}));"
+      },
+      "id": "5",
+      "name": "ERP Ready",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        780,
+        100
+      ]
+    }
+  ],
+  "connections": {
+    "Order Webhook": {
+      "main": [
+        [
+          {
+            "node": "Normalize + Validate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize + Validate": {
+      "main": [
+        [
+          {
+            "node": "Human Review?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Human Review?": {
+      "main": [
+        [
+          {
+            "node": "Review Queue",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "ERP Ready",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "active": false,
+  "versionId": "22222222-2222-4222-8222-222222222222",
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "tags": []
+}
